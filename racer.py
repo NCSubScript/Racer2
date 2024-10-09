@@ -98,6 +98,21 @@ def insideRect(location, rect):
 def sigmoid(z):
     return 1/(1 + np.exp(-z))
 
+def leakyrelu(A,z):
+    if isinstance(z, float):
+        if z<0:
+            return A*z
+        else:
+            return z
+    else:
+        for i, x in enumerate(z):
+            if x[0]<0:
+                z[i] = A*x[0]
+            else:
+                z[i] = x[0]
+
+        return z
+
 class Entity(Root):
     parent = None
     def __init__(self, parent, data = {}):
@@ -259,7 +274,7 @@ class Game(Root):
     Responsable for creation and mutation of neural network structures and gentics
 '''
 class Genetic():
-    saveFile = "best_brain"
+    saveFile = "brains/best"
 
     def __init__(self, app, inputs, neurons, layers, outputs, load = True, genes = None, structure = None):
             self.id = 0
@@ -282,6 +297,8 @@ class Genetic():
 
             self.optomizationTarget = None
             self.lastLoss = None
+
+            self.saveFile = self.saveFile + f'I{self.inputs}N{self.neurons}L{self.layers}O{self.outputs}'
             
             self.generateGeneSet()
 
@@ -468,12 +485,12 @@ class Genetic():
             self.structure = structure
 
 
-    def saveStructure(self, maunual = None):
+    def saveStructure(self, maunual = None, score = ''):
         if maunual:
             f = open(maunual, "w")
             f.write(str(self))
             f.close()
-        f = open(self.getSaveFile(), "w")
+        f = open(self.getSaveFile()+str(score), "w")
         f.write(str(self))
         f.close()
         f = open(self.saveFile, "w")
@@ -615,6 +632,52 @@ class Genetic():
                 child += genes[gene*2:(gene*2)+2]
         self.genes = child
 
+    def mate(self, partner):
+        children = {1 : {'genes': '', 'brain': []}, 2: {'genes': '', 'brain': []}}
+        for gene in range(int(len(self.genes) / 2)):
+            if bool(random.getrandbits(1)):
+                children[1]['genes'] += self.genes[gene*2:(gene*2)+2]
+                children[2]['genes'] += partner.agent.genes[gene*2:(gene*2)+2]
+            else:
+                children[1]['genes'] += partner.agent.genes[gene*2:(gene*2)+2]
+                children[2]['genes'] += self.genes[gene*2:(gene*2)+2]
+
+
+        for l in range(len(self.structure)):
+            children[1]['brain'].append({"weights": [], "biases": []})
+            children[2]['brain'].append({"weights": [], "biases": []})
+            for wr in range(len(self.structure[l]["weights"])):
+                children[1]['brain'][l]["weights"].append([])
+                children[2]['brain'][l]["weights"].append([])
+                for w in range(len(self.structure[l]["weights"][wr])):
+                    if bool(random.getrandbits(1)):
+                        children[1]['brain'][l]["weights"][wr].append(partner.agent.genetics.structure[l]["weights"][wr][w])
+                        children[2]['brain'][l]["weights"][wr].append(self.structure[l]["weights"][wr][w])
+                    else:
+                        children[1]['brain'][l]["weights"][wr].append(self.structure[l]["weights"][wr][w])
+                        children[2]['brain'][l]["weights"][wr].append(partner.agent.genetics.structure[l]["weights"][wr][w])
+                      
+                children[1]['brain'][l]["weights"][wr] = np.array(children[1]['brain'][l]["weights"][wr])
+                children[2]['brain'][l]["weights"][wr] = np.array(children[2]['brain'][l]["weights"][wr])
+
+            children[1]['brain'][l]["weights"] = np.array(children[1]['brain'][l]["weights"])
+            children[2]['brain'][l]["weights"] = np.array(children[2]['brain'][l]["weights"])
+            children[1]['brain'][l]["biases"].append([])
+            children[2]['brain'][l]["biases"].append([])
+
+            for b in range(len(self.structure[l]["biases"][0])):
+                if bool(random.getrandbits(1)):
+                    children[1]['brain'][l]["biases"][0].append(partner.agent.genetics.structure[l]["biases"][0][b])
+                    children[2]['brain'][l]["biases"][0].append(self.structure[l]["biases"][0][b])
+                    
+                else:
+                    children[1]['brain'][l]["biases"][0].append(self.structure[l]["biases"][0][b])
+                    children[2]['brain'][l]["biases"][0].append(partner.agent.genetics.structure[l]["biases"][0][b])
+
+            children[1]['brain'][l]["biases"] = np.array(children[1]['brain'][l]["biases"])
+            children[2]['brain'][l]["biases"] = np.array(children[2]['brain'][l]["biases"])
+
+        return children
 
     def alter(self, generation, structure):
         g = 0
@@ -628,7 +691,8 @@ class Genetic():
                         change = change * -1
                         
                     
-                    l["weights"][wr][w] += change * -1 if self.tested else 1 if self.app.tick == 1 else change
+                    # l["weights"][wr][w] += change * -1 if self.tested else 1 if self.app.tick == 1 else change
+                    l["weights"][wr][w] += change
                     l["weights"][wr][w] = max(-2, min(2, l["weights"][wr][w]))
                     g += 1
 
@@ -639,7 +703,8 @@ class Genetic():
                     change = change * -1
 
 
-                l["biases"][0][b] += change * -1 if self.tested else 1 if self.app.tick == 1 else change
+                # l["biases"][0][b] += change * -1 if self.tested else 1 if self.app.tick == 1 else change
+                l["biases"][0][b] += change
                 l["biases"][0][b] = max(-1 * len(l["weights"][0]), min(len(l["weights"][0]), l["biases"][0][b]))
 
                 g += 1
@@ -657,7 +722,8 @@ class Player:
         self.id = id
         self.app = app
         self.field = field
-        self.location = (x + random.randint(-600, 600), y + random.randint(-600, 600))
+        # self.location = (x + random.randint(-600, 600), y + random.randint(-600, 600))
+        self.location = (x, y)
         self.target = (x, y)
         self.center = pygame.math.Vector2(self.location)
         self.shape = shape
@@ -695,6 +761,8 @@ class Player:
 
         self.angle = angle(self.location, self.app.targets[self.checkpoint].center)
 
+        self.alive = True
+
         
 
         self.mapDiag = distance((1200,1200), (self.app.field.width - 1200, self.app.field.height - 1200))
@@ -711,7 +779,8 @@ class Player:
         self.angle = 0
         self.speed = 0
         self.speedVector = (0, 0)
-        self.location = (x + random.randint(-600, 600), y + random.randint(-600, 600))
+        # self.location = (x + random.randint(-600, 600), y + random.randint(-600, 600))
+        self.location = (x, y)
         self.target = (x, y)
         self.center = pygame.math.Vector2(self.location)
         self.frames = []
@@ -734,6 +803,8 @@ class Player:
         self.rotate(90)
         self.angle = angle(self.location, self.app.targets[self.checkpoint].center)
 
+        self.alive = True
+
         
         checkpoints = []
         for i in range(len(self.app.targets)):
@@ -745,114 +816,13 @@ class Player:
 
     def housekeeping(self):
         
-        if self.app.tick > 5:
-            if self.totalScore >= self.highScore or self.game != self.app.games or self.brainBackup == None:
-                self.brainBackup = copy.deepcopy(self.agent.brain.structure)
-                    
-            if ((self.moves > self.app.maxMoves or self.lap > self.app.laps) or (self.badMoves >= 2)):
-                self.lives += 1
-                self.updateScore()
-                if self.lives > 1:
-                    if self.highScore < self.app.scoreboard[6]["highScore"] or (self.id > 6 and self.app.scoreboard[6]["highScore"] == self.app.scoreboard[1]["highScore"]):
-                        genes = None
-                        brain = None
-                        self.onTop = 0
-                        if self.id != self.app.playerCount - 1 and self.app.clensed == False and self.highestLap == 1 and self.app.highestLat > 1 and self.rank < (self.app.playerCount * 0.2):
-                            self.lives = 0
-                            self.highScore = 0
-                            self.highestCheckpoint = 0
-                            self.generations = 0
-                            self.totalScore = 0
-                            self.highestLap = 0
-                            self.app.clensed = True
-                            type = "clone"
-                            breader = (self.rank - 1) % 5
-                            if self.app.scoreboard[(self.rank - 1) % 5]["id"] == len(self.app.players) - 1:
-                                breader += 1
-                            genes = self.app.players[self.app.scoreboard[breader]["id"]].agent.genetics.previous["genes"]
-                            brain = self.app.players[self.app.scoreboard[breader]["id"]].agent.genetics.previous["brain"]
-                        else:
-                            breader = self.app.scoreboard[0]["id"] if self.app.scoreboard[(self.rank - 1) % 5]["id"] != len(self.app.players) - 1 else self.app.scoreboard[1]["id"]
-                            if self.app.matingStrat == "Populations":
-                                if (self.app.highestCheckpoint >= 2 or self.app.highestCheckpoint == len(self.app.targets) - 1) or self.lives >= self.app.maxLives:
-                                    type = "pack"
-                                    if self.rank < int(len(self.app.scoreboard) * self.app.leaderPct) + 1:
-                                        self.lives = 0
-                                        type = "leader"
-                                    elif self.rank < len(self.app.scoreboard) - (int(len(self.app.scoreboard) * self.app.runtPct)):
-                                        if self.lives >= self.app.maxLives:
-                                            self.lives = 0
-                                            self.highScore = 0
-                                            self.highestCheckpoint = 0
-                                            self.generations = 0
-                                            self.totalScore = 0
-                                        type = "runt"
-                                    elif self.rank < len(self.app.scoreboard) - (int(len(self.app.scoreboard) * self.app.clonePct)):
-                                        if self.lives >= self.app.maxLives:
-                                            self.lives = 0
-                                            self.highScore = 0
-                                            self.highestCheckpoint = 0
-                                            self.generations = 0
-                                        type = "clone"
-                                        genes = self.app.players[self.app.scoreboard[breader]["id"]].agent.genes
-                                        brain = self.app.players[self.app.scoreboard[breader]["id"]].agent.brain.structure
-                                    else:
-                                        self.lives = 0
-                                        genes = self.app.players[self.app.scoreboard[breader]["id"]].agent.genes
-                                        brain = self.app.players[self.app.scoreboard[breader]["id"]].agent.brain.structure
-                                else:
-                                    type = "leader"
+        if ((self.moves > self.app.maxMoves or self.lap > self.app.laps) or (self.badMoves >= 2)):
+            self.lives += 1
+            self.alive = False
+            self.updateScore()
+                
 
-                                self.agent.genetics.replace(type, self.totalScore, self.generations, genes, brain)
-                                self.agent.brain.structure = self.agent.genetics.structure
-                                self.generations += 1 
-                            else:
-                                if self.game == self.app.games:
-                                    type = "pack"
-                                    if self.lives >= self.app.maxLives:
-                                        self.lives = 0
-                                        self.highScore = 0
-                                        self.highestCheckpoint = 0
-                                        self.generations = 0
-                                        self.totalScore = 0
-                                        self.highestLap = 0
-                                        # genes = self.agent.genetics.previous["genes"]
-                                        # if not len(genes):
-                                        #     genes = self.agent.genetics.genes
-                                        # brain = self.app.players[self.app.scoreboard[(self.rank - 1) % 5]["id"]].agent.genetics.previous["brain"]
-                                        # if not len(brain):
-                                        #     brain = self.app.players[self.app.scoreboard[(self.rank - 1) % 5]["id"]].agent.genetics.structure
-
-                                        genes = copy.deepcopy(self.app.players[self.app.scoreboard[random.randint(0, 9)]["id"]].agent.genetics.genes)
-                                        brain = copy.deepcopy(self.app.players[self.app.scoreboard[random.randint(0, 9)]["id"]].agent.brain.structure)
-                                        self.agent.brain.structure = brain
-                                        self.agent.genetics.structure = brain
-                                    
-                                    self.agent.genetics.replace(type, self.totalScore, self.generations, genes, brain)
-                                    self.agent.brain.structure = self.agent.genetics.structure
-                                    self.generations += 1 
-                                
-                    else:
-                        if self.app.save == True and self.highScore >= self.app.highscore and self.id == self.app.scoreboard[0]["id"] if self.app.scoreboard[0]["id"] != len(self.app.players) - 1 else self.app.scoreboard[1]["id"]:
-                            self.agent.genetics.saveStructure()
-                            self.app.renderSaving(self.id)
-
-                        if self.highScore >= self.app.scoreboard[0]["highScore"]:
-                            self.app.totalGenerations += 1         
-                        type = "leader"
-                        self.agent.genetics.replace(type, self.highScore, self.generations, None, None)
-                        self.agent.brain.structure = self.agent.genetics.previous["brain"]    
-                        self.lives = 0
-                        self.onTop += 1
-
-                    if self.totalScore < self.highScore and self.game == self.app.games and self.lives < self.app.maxLives:
-                        brain = copy.deepcopy(self.brainBackup)
-                        self.agent.brain.structure = brain
-                        self.agent.genetics.structure = brain
-                        self.highScore = 0
-
-                self.moves = 0
-                self.reinit()
+                
                 
             
 
@@ -907,6 +877,10 @@ class Player:
 
 
     def generateFrames(self, thrust):
+        if not self.alive:
+            return
+        
+        self.frames = []
         if not isinstance(thrust, int):
             if thrust == "BOOST":
                 thrust = 650
@@ -955,9 +929,16 @@ class Player:
 
         range = min(1, (1 - ((myDistance - target.size) / (target.dist - target.size))))
         score = math.ceil(((self.app.totalTargetDist / len(self.app.targets)) * range))
+        if score < 0:
+            if self.app.trainingStage == 0:
+                score = int(score / 64)
+            if self.app.trainingStage == 1:
+                score = int(score / 4)
+            if self.app.trainingStage == 2:
+                score = int(score * 2)
         score = score + math.ceil(score * (1 - (self.moves / self.app.maxMoves)))
-        # if score > self.scores["distance"]:
-        self.scores["distance"] = score
+        if score < 0 or score > self.scores["distance"]:
+            self.scores["distance"] = score
         self.updateScore()
         # if self.lap > 1:
         #     self.scores["distance"] = int((((1 - (self.moves / self.app.maxMoves) * self.scores["distance"]))))
@@ -984,7 +965,7 @@ class Player:
         
     def insideCheckpoint(self):
             self.badMoves = -12
-            self.scores["accrued"] += int(self.scores["distance"])
+            self.scores["accrued"] += int(self.scores["distance"]) + 5000
             self.scores["distance"] = 0
             self.updateScore()
             self.moves = 0
@@ -997,12 +978,20 @@ class Player:
                 return
             
             if self.lastCheckpoint == 0:
+                if self.app.trainingStage < 1:
+                    self.app.traingingStage = 1
                 self.lap += 1
                 if self.lap > self.highestLap:
                     self.highestLap = self.lap
                     if self.highestLap > self.app.highestLap:
                         self.app.highestLat = self.highestLap
                 if self.lap > self.app.laps:
+                    if self.app.trainingStage < 2:
+                        self.app.traingingStage = 2
+                    self.alive = False
+                    for player in self.app.players:
+                        player.alive = False
+                    return 
                     if self.id == topId and hasattr(self.app.audio, 'sound_finish'):
                         if not self.app.audio.muted:
                             self.app.audio.sound_lap.set_volume(0.1)
@@ -1030,8 +1019,6 @@ class Player:
         self.movesSince += 1
         self.lastHighScore = self.highScore
         self.totalScore = sum(self.scores.values())
-        if self.totalScore > self.highScore:
-            self.highScore = self.totalScore
         self.movesSince = 0
 
 
@@ -1432,7 +1419,6 @@ class App:
     maxLives = 9
     maxMoves = 45
     geneImpactDefault = 0.0001
-
     geneImpact = 0.0001
     maxMutations = 8
     matingStrat = "MateUp" # "Populations"
@@ -1452,6 +1438,7 @@ class App:
         self._display_surf = None
         self._running = True
         self.colors = Colors()
+        self.caption = "Racer2"
         self.window = Window()
         self.field = Field(self, self.window)
         self.audio = Audio()
@@ -1474,7 +1461,11 @@ class App:
         self.tick = 0
         self.laps = 3
         self.windowCopy = None
-        self.totalGenerations = 0
+        self.totalGenerations = 1
+
+        self.tests = 0
+        self.maxTests = 20
+        self.trainingStage = 0
 
         self.fps = 30
 
@@ -1488,17 +1479,19 @@ class App:
 
         self.audio.load()
 
+        self.highScore = 0
+
     def loadAttributes(self):
         self.scoreboard = [{"id": 0, "highScore": 0}]
         self.trend = []
         self.highscore = 0
         self.hsg = 0
-        self.totalGenerations = 1
         self.highestCheckpoint = 0
         self.rounds = 1
         self.highestLap = 0
         self.clensed = False
-    
+        self._saveFlag = False
+
     def generatePlayers(self):
         self.players = []
         for p in range(self.playerCount):
@@ -1547,14 +1540,18 @@ class App:
 
             self.totalTargetDist += (t.dist - t.size)
 
-    def reinit(self):
+    def reinit(self, targetList=None):
         self.loadAttributes()
-        self.generateTargets(random.randint(3, 8))
+
+        if targetList is not None:
+            self.generateTargets(None, targetList)
+        else:
+            self.generateTargets(random.randint(3, 8))
 
         for p in self.players:
             p.rounds = 1
             p.onTop = 0
-            p.highScore = 0
+            # p.highScore = 0
             p.topScore = 0
             p.scores = {"distance": 0, "accrued": 0}
             p.reinit()
@@ -1578,6 +1575,7 @@ class App:
 
         #pygame.FULLSCREEN
         self._display_surf = pygame.display.set_mode(self.window.size(), self.surfaceOptions, 32, 0, True)
+        pygame.display.set_caption(self.caption)
         self.field.loadImages()
         self.updateField()
 
@@ -1596,6 +1594,7 @@ class App:
             self.updateField()
             self.indexTargets()
             self.inputs.defineInputs()
+            pygame.display.set_caption(self.caption)
 
         if self.inputs.active == None:
             if event.type == pygame.KEYUP:
@@ -1686,6 +1685,8 @@ class App:
                 self.stepMode = True
             self.windowCopy = None
             self.play = True
+        if key[pygame.K_b]:
+            self._saveFlag = not self._saveFlag 
 
     def drawGame(self):
         self.framesRemaining = 0
@@ -1838,11 +1839,14 @@ class App:
                     nodePosition3 = (int(coffset + (cwidth * l)), int(hoffset + ((rheight * wr)) + (topNode2 * rheight)))
 
                     if wr == 0:
+                        result = 0
                         # print(f'{self.players[self.scoreboard[brainId]["id"]].agent.brain.results=}')
                         if isinstance(self.players[self.scoreboard[brainId]["id"]].agent.brain.results[l][0], np.float64):
                             result = self.players[self.scoreboard[brainId]["id"]].agent.brain.results[l][w]
                         else:
-                            result = self.players[self.scoreboard[brainId]["id"]].agent.brain.results[l][0][w]
+                            if len(self.players[self.scoreboard[brainId]["id"]].agent.brain.results[l][0]) > w:
+
+                                result = self.players[self.scoreboard[brainId]["id"]].agent.brain.results[l][0][w]
                         
                         pygame.draw.circle(surface, self.colors.tgreen if sigmoid(result) >= 0.5 else self.colors.tred, nodePosition, 36 if big else 6 , width=0)
 
@@ -1943,16 +1947,16 @@ class App:
             self.drawScoreboard()
             self.drawProgressChart()
             topId = self.scoreboard[0]["id"]
-            text = self.font.render(f'Lap: {self.players[topId].lap}/3 ' +\
+            text = self.font.render(f'Games: {self.games} ' \
+                                    f'Rounds: {self.tests+1} '+ \
+                                    f'Lap: {self.players[topId].lap}/3 ' +\
                                     f'Checkpoint: {self.players[topId].checkpoint} ' +\
+                                    f'Highscore: {self.highScore} (Gen: {self.hsg}) ' +\
                                     f'Generations: {self.totalGenerations} ' +\
-                                    f'X: {int(self.players[topId].agent.data["lastMoveReq"][0])} ' +\
+                                    f'geneImpact: {self.geneImpact:0.4f} '+ \
+                                    f'Leader: (X: {int(self.players[topId].agent.data["lastMoveReq"][0])} ' +\
                                     f'Y: {int(self.players[topId].agent.data["lastMoveReq"][1])} ' +\
-                                    f'Thrust: {self.players[topId].agent.data["lastMoveReq"][2]} ' +\
-                                    f'Highscore: {self.highscore} (Gen: {self.hsg}) ' +\
-                                    f'geneImpact: {self.geneImpact} '+ \
-                                    f'Rounds: {self.rounds} '+ \
-                                    f'Games: {self.games} ', \
+                                    f'Thrust: {self.players[topId].agent.data["lastMoveReq"][2]}) ', +\
                                     True, self.colors.white, self.colors.black)
         else:
             text = self.font.render(f'Lap: {self.players[0].lap}/3      ' +\
@@ -1976,13 +1980,13 @@ class App:
             if r["highScore"] == lastScore:
                 continue
 
-            lastScore = r["highScore"]
+            lastScore = r["highScore"]+r["totalScore"]
             text = f'{str(score)+":":<4} {r["id"]:<3}G{self.players[r["id"]].generations}'
             t = self.font.render(text, True, self.colors.white, self.colors.dark_gray)
             textSize = self.font.size(text)
             self._display_surf.blit(t, tuple((4, (textSize[1]*printed))))
 
-            text = f'{r["highScore"]:>5d}'
+            text = f'{r["highScore"]+r["totalScore"]:>5d}'
             t = self.font.render(text, True, self.colors.white, self.colors.dark_gray)
             textSize = self.font.size(text)
             self._display_surf.blit(t, tuple((self.field.left - (textSize[0] + 8), (textSize[1]*printed))))
@@ -2010,7 +2014,7 @@ class App:
 
     def updateScoreboard(self):
         rankedPlayers = [{"id": p.id, "totalScore": p.totalScore, "highScore":  p.highScore, "generation": p.generations, "distance": p.scores["distance"]} for p in self.players]
-        rankedPlayers.sort(key=lambda r: r["highScore"], reverse=True)
+        rankedPlayers.sort(key=lambda r: r["highScore"] + r["totalScore"], reverse=True)
         topRankedPlayers = list(filter(lambda d: d['highScore'] == rankedPlayers[0]['highScore'], rankedPlayers))
         if len(topRankedPlayers) > 1:
             topRankedPlayers.sort(key=lambda r: r["generation"])
@@ -2018,7 +2022,7 @@ class App:
                 rankedPlayers[i] = r
 
         if rankedPlayers[0]["highScore"] > self.highscore:
-            self.highscore = rankedPlayers[0]["highScore"] if rankedPlayers[0]["id"] < self.playerCount - 1 else rankedPlayers[1]["highScore"] 
+            self.highscore = rankedPlayers[0]["highScore"]+rankedPlayers[0]["totalScore"]
             self.hsg = self.players[rankedPlayers[0]["id"]].generations
 
         for i, rating in enumerate(rankedPlayers):
@@ -2039,11 +2043,6 @@ class App:
 
     # This becomes the main function on codingamge.com mad-pod-racing (Python)
     def agent_loop(self):
-        leaderId = self.scoreboard[0]["id"]
-        if leaderId == self.playerCount - 1:
-            leaderId = self.scoreboard[1]["id"]
-        self.geneImpact = min(0.001, self.geneImpactDefault * ((max((max(0, self.players[leaderId].onTop)) * 10, 1)) * math.pi))
-        
         if not self.interface.called:
             del self.game
             self.game = Game()
@@ -2073,19 +2072,12 @@ class App:
                     self.agents[i].genetics.id = self.players[i].id
                     # ... End Remove
 
-                    if i == len(self.players)-1:
-                        if self.save:
-                            self.agents[i].genetics.loadStructure(None, "Manual")
-                            self.agents[i].brain = Neural(copy.deepcopy(self.agents[i].genetics.structure))
-                            self.agents[0].brain = None
-                            self.agents[0].brain = Neural(copy.deepcopy(self.agents[i].genetics.structure))
-                            self.agents[i].genes = str(self.agents[i].genetics.genes)
                 else:
                     self.agents[i].reinit(laps, checkpointCount, checkpoints)
 
         # Refacotr in Codingame
         for player in self.players:
-            if self.tick >= 1:
+            if self.tick >= 1 and player.alive:
                 player.housekeeping()
             # print(f'Player ID: ({player.id}) calling Command')
             x, y, vx, vy, a, ncid = [int(j) for j in self.interface.input().split()]
@@ -2101,61 +2093,7 @@ class App:
                 player.agent.roundData(x, y, vx, vy, a, ncid, self.agents)
 
         for player in self.players:
-            if player.id == self.playerCount - 1:
-                racer = self.game.data['racer'][0]
-                # racer.update(player.agent.data["ncid"] % len(self.targets), 'ncid')
-                # print(racer.data['ncid'] )
-                if 'ncid' in racer.data['previous']:
-                    if racer.data['previous']['ncid'] != racer.data['ncid']:
-                        racer.data['earlyTurn'] = False
-                        racer.data['abortEarlyTurn'] = False
-                        if racer.data['ncid'] == 1:
-                            racer.update(racer.data['lap'] + 1, 'lap')
-
-                # racer.setTarget('checkpoint', game.data['racer'][0].data['ncid']+i if game.data['racer'][0].data['ncid']+i < len(game.data['checkpoint']) else 0)
-                racer.setTarget('checkpoint', racer.data['ncid'])
-
-                player.agent.getMove()
-                player.agent.update((int(racer.data['move']['x']), int(racer.data['move']['y'])), "lastMove")
-                player.agent.update((int(racer.data['move']['x']), int(racer.data['move']['y']), racer.data['thrust'] if len(str(racer.data['thrust'])) > 3 else abs(racer.data['thrust'])), "lastMoveReq")
-
-                
-                delta = angleDelta(racer.data['target']['angle'], racer.data['vector']['d'], targetAngleOffset(racer.data['angle'], racer.data['target']['angle'], 0), 8)
-                left = 0
-                right = 0
-                if delta < 0:
-                    if abs(delta) > 18:
-                        left = 1
-                    else:
-                        left = 1 / max(0.01, abs(delta))
-                else:
-                    if abs(delta) > 18:
-                        right = 1
-                    else:
-                        right = 1 / max(0.01, abs(delta))
-                    
-                thrust = 1 if len(str(racer.data['thrust'])) > 3 else 1 / abs(racer.data['thrust'])
-                boost = 1 if len(str(racer.data['thrust'])) > 3 else 0
-
-                brain = player.agent.brain
-                # player.agent.genetics.backpropagation(brain.results, (left, right, thrust, boost), brain.inputs)
-                # if len(racer.results):
-                    # print(f'{player.agent.brain.inputs=} {racer.results=} {player.agent.brain.results[1]=} {player.agent.genetics.computeLoss(racer.results, player.agent.brain.results[1])}')
-                    # print(f'{sum(player.agent.genetics.computeLoss(racer.results, player.agent.brain.results[1]))=}')
-                    # if sum(player.agent.genetics.computeLoss(racer.results, player.agent.brain.results[1])) > 0.01:
-                    #     for i in range(100):
-                    #         result = player.agent.genetics.optomizeZBF(player.agent.brain.inputs, racer.results, player.agent)
-                    #         print(f'Alg:{racer.results} Brain:{player.agent.brain.results[1][0]} Loss:{player.agent.genetics.computeLoss(racer.results, player.agent.brain.results[1])[0]}')
-
-                    #         # if result:
-                    #             # print(f'Improved Network {player.agent.genetics.computeLoss(racer.results, player.agent.brain.results[1])}')
-                    #     self.players[0].agent.genetics.structure = player.agent.brain.structure
-                    #     self.players[0].agent.brain.structure = player.agent.brain.structure
-                    #     player.agent.genetics.structure = player.agent.brain.structure
-                    #     player.agent.genetics.saveStructure("Manual")
-                self.interface.command(str(int(racer.data['move']['x'])) + " " + str(int(racer.data['move']['y'])) + " " + str(racer.data['thrust'] if len(str(racer.data['thrust'])) > 3 else abs(racer.data['thrust'])))
-            else:
-                self.interface.command(player.agent.getMove())
+            self.interface.command(player.agent.getMove())
 
     def on_render(self, tick = 30):
         pygame.display.flip()
@@ -2167,22 +2105,124 @@ class App:
     def on_execute(self):
         if self.on_init() == False:
             self._running = False
+
+        self.playing = False
+        self.training = True
  
-        while( self._running ):
-            for event in pygame.event.get():
-                self.on_event(event)
-            self.on_input()
-            self.audio.play()
-            if self.play == True:
-                self.on_loop()
-                self.on_render()
-                self.tick += 1
-                if self.stepMode == True:
-                    self.play = False
+        while self._running:
+            if self.trainingStage == 2:
+                self.maxTests = 10
+            if self.trainingStage == 1:
+                self.maxTests = 15
+            if self.trainingStage == 0:
+                self.maxTests = 20
+
+            while self._running and (self.training or self.playing):
+                for event in pygame.event.get():
+                    self.on_event(event)
+                self.on_input()
+                self.audio.play()
+                if self.play == True:
+                    self.on_loop()
+                    self.on_render()
+                    self.tick += 1
+                    if self.stepMode == True:
+                        self.play = False
+                else:
+                    if self.windowCopy == None:
+                        self.windowCopy = self._display_surf.copy()
+                    self.playerDebug()
+
+                if not len([p for p in self.players if p.alive == True]):
+                    self.training = False
+                    self.rounds += 1
+                self.players.sort(key=lambda p: p.highScore, reverse=True)
+                for idx, player in enumerate(self.players):
+                    player.rank = idx
+
+
+            # print("Everyone's dead...")
+            if self.tests == 0 :
+                o = []
+                for t in self.targets:
+                    o.append(t.center)
+
+                self.targetProfiles[0] = o
+            self.tests += 1
+            
+            
+            self.winners = 10
+
+            for idx, player in enumerate(self.players):
+                player.highScore += player.totalScore
+                if self.tests > 0:
+                    player.highScore = int(player.highScore / 2)
+            self.players.sort(key=lambda p: p.highScore, reverse=True)
+
+            for idx, player in enumerate(self.players):
+                player.rank = idx
+                if idx >= self.winners:
+                    player.agent.genetics.alter(1, player.agent.genetics.structure)
+                    player.agent.brain = player.agent.genetics
+
+
+            
+            counts = {"winners": 0, "direct_children": 0, "mutated_children": 0, "new": 0}
+
+            if self.tests >= self.maxTests:
+                # self.players.sort(key=lambda p: p.highScore, reverse=True)
+                self.playerSorted = True
+                print(f'Generation: {self.totalGenerations} Highscore: {self.players[0].highScore}')
+                offspring = []
+                for idx, player in enumerate(self.players):
+                    if self.tests == self.maxTests and idx == 0:
+                        if player.highScore > self.highScore or self._saveFlag:
+                            if player.highScore > self.highScore:
+                                self.highScore = player.highScore
+                                self.hsg = self.totalGenerations
+                            player.agent.genetics.saveStructure(None, player.highScore)
+                    if idx < self.winners:
+                        counts["winners"] += 1
+                        for pidx in range(idx + 1, self.winners):
+                            if idx != pidx:
+                                # print(f'Breeding {idx=} with {pidx=}')
+                                offspring.append(player.agent.genetics.mate(self.players[pidx]))
+                                # print(f"\tResults: {offspring=}")
+
+                    else:  
+                        # print(f'{idx - self.winners=}')
+                        # print(f'{len(offspring)-1=}')
+                        # print((idx - self.winners) % (len(offspring)))
+                        player.agent.genetics.genes = offspring[(idx - self.winners) % (len(offspring ))][(idx % 2) + 1]['genes']
+                        if idx >= (len(offspring) * 2) + self.winners:
+                            if idx >= (len(offspring) * 4) + self.winners:
+                                counts['new'] += 1
+                                player.agent.genetics.genGenes()
+                                player.agent.genetics.mutate()
+                                # player.agent.genetics.genStructure()
+                                player.agent.genetics.alter(1, offspring[(idx - self.winners) % (len(offspring ))][(idx % 2) + 1]['brain'])
+                            else:
+                                counts["mutated_children"] += 1
+                                player.agent.genetics.mutate()
+                                player.agent.genetics.alter(1, offspring[(idx - self.winners) % (len(offspring ))][(idx % 2) + 1]['brain'])
+                            
+                        else:
+                            counts["direct_children"] += 1
+                            player.agent.genetics.structure = copy.deepcopy(offspring[(idx - self.winners) % (len(offspring ))][(idx % 2) + 1]['brain'])
+
+                        
+                    player.agent.brain = player.agent.genetics
+                    player.highScore = 0
+                print(f'{sum(counts.values())} contenders form {counts}')
+                self.totalGenerations += 1
+
+            if self.tests == self.maxTests:
+                self.tests = 0
+                self.reinit()
             else:
-                if self.windowCopy == None:
-                    self.windowCopy = self._display_surf.copy()
-                self.playerDebug()
+                self.reinit(0)
+            self.training = True
+
 
         self.on_cleanup()
 
@@ -2268,17 +2308,26 @@ class Neural():
         self.results = []
         
         for l in self.structure:
-            if output is None:
-                z = self.process(l, data)
-                self.results.append(z)
-                output = sigmoid(z)
-            else:
+            if l == len(self.structure)-1:
                 z = self.process(l, output)
                 self.results.append(z)
                 result = z.tolist().pop()
                 output = []
                 for r in result:
-                    output.append(sigmoid(r))
+                    output.append(sigmoid(np.tanh(r)))
+                
+            else:
+                if output is None:
+                    z = self.process(l, data)
+                    self.results.append(z)
+                    output = leakyrelu(0.2, z)
+                else:
+                    z = self.process(l, output)
+                    self.results.append(z)
+                    result = z.tolist().pop()
+                    output = []
+                    for r in result:
+                        output.append(leakyrelu(0.2, r))
             
         # print(f'{self.results}')
         return output
@@ -2329,9 +2378,10 @@ class Agent(Root):
         self.hasBoost = True
 
         # Replace this with trained neural structure
-        self.genetics = Genetic(self.app, 15, 13, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
+        self.genetics = Genetic(self.app, 17, 15, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
         self.brain = Neural(copy.deepcopy(self.genetics.structure))
         self.genes = str(self.genetics.genes)
+        self.output = [0, 0]
 
     def reinit(self, laps, checkpointCount, checkpoints):
         self.data['previous'] = {}
@@ -2340,6 +2390,7 @@ class Agent(Root):
         self.data["checkpoints"] = checkpoints
         self.lastThrust = 0
         self.data["laps"] = laps
+        self.output = [0, 0]
 
         
     def roundData(self, x, y, vx, vy, angle, ncid, pods):
@@ -2414,8 +2465,11 @@ class Agent(Root):
                 self.app.targets[ffcid].path / 360, \
                 sigmoid(self.app.targets[ffcid].dist / 5000), \
                 angleDiffrence(self.app.targets[fcid].path, self.app.targets[ffcid].path) / 180, \
-                int(self.hasBoost)]
+                int(self.hasBoost),
+                self.output[0],
+                self.output[1]]
         output = self.brain.forward(data)
+        self.output = output
 
         thrust = abs(math.ceil(output[1] * 100)) if not output[2] > 0.98 else "BOOST"
         if thrust == "BOOST":
