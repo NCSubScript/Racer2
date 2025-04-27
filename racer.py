@@ -2435,7 +2435,7 @@ class Agent(Root):
         self.usedShieldTurns = 0
 
         # Replace this with trained neural structure
-        self.genetics = Genetic(self.app, 31, 22, 4, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
+        self.genetics = Genetic(self.app, 31, 22, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
         self.brain = Neural(copy.deepcopy(self.genetics.structure))
         self.genes = str(self.genetics.genes)
         self.output = [0, 0, 0]
