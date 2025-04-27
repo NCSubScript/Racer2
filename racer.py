@@ -292,11 +292,7 @@ class Genetic():
             self.load = load
             self.structure = []
             self.dnaSegments = {}
-<<<<<<< HEAD
             self.dnaSegments["weights"] = (inputs * neurons) + (neurons ** layers-1) + (neurons * outputs)
-=======
-            self.dnaSegments["weights"] = (inputs * neurons) + (neurons * neurons * layers) + (neurons * outputs)
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
             self.dnaSegments["biases"] = (neurons * layers) + outputs
 
             self.optomizationTarget = None
@@ -982,11 +978,7 @@ class Player:
                 return
 
             if self.lastCheckpoint == 0:
-<<<<<<< HEAD
                 if self.app.trainingStage < 1:
-=======
-                if self.app.trainingStage < 1 and self.app.totalGenerations > 50:
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
                     self.app.trainingStage = 1
                 self.lap += 1
                 if self.lap > self.highestLap:
@@ -1443,16 +1435,11 @@ class App:
     def __init__(self, targets = 4, targetlist = None, players = 2, save = True):
         self.now = time.time()
         self.save = save
-        self.maxD = math.sqrt(16000**2 + 9000**2)
         self.playerCount = players
         self._display_surf = None
         self._running = True
         self.colors = Colors()
-<<<<<<< HEAD
         self.caption = "Racer2"
-=======
-        self.caption = "Racer3"
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
         self.screenId = 0
         self.activeDisplay = 0
         self.window = Window()
@@ -1708,10 +1695,7 @@ class App:
                 self.stepMode = True
             self.windowCopy = None
             self.play = True
-<<<<<<< HEAD
         
-=======
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
 
     def drawGame(self):
         self.framesRemaining = 0
@@ -2451,10 +2435,10 @@ class Agent(Root):
         self.usedShieldTurns = 0
 
         # Replace this with trained neural structure
-        self.genetics = Genetic(self.app, 31, 22, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
+        self.genetics = Genetic(self.app, 17, 15, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
         self.brain = Neural(copy.deepcopy(self.genetics.structure))
         self.genes = str(self.genetics.genes)
-        self.output = [0, 0, 0]
+        self.output = [0, 0]
 
     def reinit(self, laps, checkpointCount, checkpoints):
         self.data['previous'] = {}
@@ -2463,11 +2447,7 @@ class Agent(Root):
         self.data["checkpoints"] = checkpoints
         self.lastThrust = 0
         self.data["laps"] = laps
-<<<<<<< HEAD
         self.output = [0, 0]
-=======
-        self.output = [0, 0, 0]
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
         self.mass = 1
         self.usedShield = False
         self.usedShieldTurns = 0
@@ -2491,10 +2471,7 @@ class Agent(Root):
             der = deriv(self.data['previous']['location'], self.data['location'])
         else: 
             der = deriv(self.data['location'], self.data['location'])
-        
 
-        # print(f'{self.data['location'] if "location" not in self.data['previous'] else self.data['previous']['location']}, {self.data['location']}')
-        # print(der)
         speed =  math.sqrt(abs(der['dx'] ** 2) + abs(der['dy'] ** 2))
 
         self.update(math.atan2(dert['dy'], dert['dx']) * (180 / math.pi), "targetAngle")
@@ -2550,20 +2527,7 @@ class Agent(Root):
                 angleDiffrence(self.app.targets[fcid].path, self.app.targets[ffcid].path) / 180, \
                 int(self.hasBoost),
                 self.output[0],
-                self.output[1],
-                self.output[2],
-                1 - (self.usedShieldTurns / 3)]
-        
-        extraCount = 0
-        for p in self.app.players:
-            if p.id != self.player.id:
-                extraCount += 1
-                data.append(p.agent.data["angle"] / 360)
-                data.append(p.agent.data["vector"]["d"] / 360)
-                data.append(p.agent.data["vector"]["m"] / 5000)
-                data.append(1 - (distance(self.data["location"], p.agent.data["location"]) / self.app.maxD))
-            if extraCount == 3:
-                break
+                self.output[1]]
         output = self.brain.forward(data)
         self.output = output
 
@@ -2580,10 +2544,6 @@ class Agent(Root):
             self.usedShieldTurns += 1
             self.mass = 10
             if self.usedShieldTurns > 3:
-<<<<<<< HEAD
-=======
-                self.usedShieldTurns = 0
->>>>>>> d4020b21d54bb83fee147c8483b830c256d5cfc5
                 self.usedShield = False
                 self.mass = 1
         direction = self.direction(output[0])
