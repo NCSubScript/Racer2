@@ -1,1 +1,8 @@
+Source of insperation https://www.codingame.com/multiplayer/bot-programming/mad-pod-racing
+
 Run py racer.py
+
+Press 'm' to Mute audio
+Press 'd' to hide debug lines
+
+Todo, train larger network to better aproxamete race conditions, including breaking, collusion, and bumping.  (See Racer repo for Racer 3....)
