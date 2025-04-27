@@ -292,7 +292,7 @@ class Genetic():
             self.load = load
             self.structure = []
             self.dnaSegments = {}
-            self.dnaSegments["weights"] = (inputs * neurons) + (neurons ** layers) + (neurons * outputs)
+            self.dnaSegments["weights"] = (inputs * neurons) + (neurons * neurons * layers) + (neurons * outputs)
             self.dnaSegments["biases"] = (neurons * layers) + outputs
 
             self.optomizationTarget = None
@@ -686,7 +686,7 @@ class Genetic():
             for wr in range(len(l["weights"])):
                 for w in range(len(l["weights"][wr])):
                     gene = self.genes[g*7:(g*7)+7]
-                    change = int(gene[1:], 2) * (self.app.geneImpact * (2 if generation <= 2 else 1))
+                    change = int(gene[1:], 2) * ((self.app.geneImpact * max(0.0001, ((1 / self.app.totalGenerations) / 4))))
                     if int(gene[0]):
                         change = change * -1
                         
@@ -698,7 +698,7 @@ class Genetic():
 
             for b in range(len(l["biases"][0])):
                 gene = self.genes[g*7:(g*7)+7]
-                change = int(gene[1:], 2) * (self.app.geneImpact * (2 if generation <= 2 else 1))
+                change = int(gene[1:], 2) * ((self.app.geneImpact * max(0.0001, ((1 / self.app.totalGenerations) / 4))))
                 if int(gene[0]):
                     change = change * -1
 
@@ -884,10 +884,10 @@ class Player:
         if not isinstance(thrust, int):
             if thrust == "BOOST":
                 thrust = 650
-            if thrust == "SHIELD":
+            elif thrust == "SHIELD":
                 thrust = 0
-            if thrust > 0:
-                thrust /= self.app.frameDivisor
+            elif int(thrust) > 0:
+                thrust = int(thrust) / self.app.frameDivisor
 
         for i in range(self.app.frameDivisor):
             self.faceVector =  thrust * (math.cos(math.pi * 2 * self.angle / 360)), thrust * (math.sin(math.pi * 2 * self.angle / 360))
@@ -931,13 +931,13 @@ class Player:
         score = math.ceil(((self.app.totalTargetDist / len(self.app.targets)) * range))
         if score < 0:
             if self.app.trainingStage == 0:
-                score = int(score / 64)
+                score = int(score / 1024)
             if self.app.trainingStage == 1:
-                score = int(score / 4)
+                score = int(score / 8)
             if self.app.trainingStage == 2:
                 score = int(score * 2)
-        score = score + math.ceil(score * (1 - (self.moves / self.app.maxMoves)))
-        if score < 0 or score > self.scores["distance"]:
+                score = score + math.ceil(score * (1 - (self.moves / self.app.maxMoves)))
+        if (score < 0 and self.app.trainingStage > 0) or score > self.scores["distance"]:
             self.scores["distance"] = score
         self.updateScore()
         # if self.lap > 1:
@@ -976,10 +976,10 @@ class Player:
                 self.app.games += 1
                 self.app.reinit()
                 return
-            
+
             if self.lastCheckpoint == 0:
-                if self.app.trainingStage < 1:
-                    self.app.traingingStage = 1
+                if self.app.trainingStage < 1 and self.app.totalGenerations > 50:
+                    self.app.trainingStage = 1
                 self.lap += 1
                 if self.lap > self.highestLap:
                     self.highestLap = self.lap
@@ -987,7 +987,7 @@ class Player:
                         self.app.highestLat = self.highestLap
                 if self.lap > self.app.laps:
                     if self.app.trainingStage < 2:
-                        self.app.traingingStage = 2
+                        self.app.trainingStage = 2
                     self.alive = False
                     for player in self.app.players:
                         player.alive = False
@@ -1418,8 +1418,8 @@ class App:
     framesRemaining = 0
     maxLives = 9
     maxMoves = 45
-    geneImpactDefault = 0.0001
-    geneImpact = 0.0001
+    geneImpactDefault = 0.1
+    geneImpact = 0.1
     maxMutations = 8
     matingStrat = "MateUp" # "Populations"
 
@@ -1433,12 +1433,16 @@ class App:
                       ((6544,7845), (7489, 1347), (12727, 7116), (4066, 4645), (13010, 1883))]
     
     def __init__(self, targets = 4, targetlist = None, players = 2, save = True):
+        self.now = time.time()
         self.save = save
+        self.maxD = math.sqrt(16000**2 + 9000**2)
         self.playerCount = players
         self._display_surf = None
         self._running = True
         self.colors = Colors()
-        self.caption = "Racer2"
+        self.caption = "Racer3"
+        self.screenId = 0
+        self.activeDisplay = 0
         self.window = Window()
         self.field = Field(self, self.window)
         self.audio = Audio()
@@ -1475,7 +1479,6 @@ class App:
 
         self.generateTargets(targets, targetlist)
 
-        self.generatePlayers()
 
         self.audio.load()
 
@@ -1568,7 +1571,7 @@ class App:
     def updateField(self):
         self.field.updateSize()
         for target in self.targets:
-                target.fieldTransform()
+            target.fieldTransform()
 
     def on_init(self):
         pygame.init()
@@ -1584,6 +1587,8 @@ class App:
         self.loadFonts()
 
         self.inputs = Inputs(self)
+        self.generatePlayers()
+
 
     def on_event(self, event):
         if event.type == pygame.QUIT:
@@ -1595,6 +1600,9 @@ class App:
             self.indexTargets()
             self.inputs.defineInputs()
             pygame.display.set_caption(self.caption)
+
+        if event.type == pygame.WINDOWDISPLAYCHANGED:
+            self.screenId = int(event.display_index)
 
         if self.inputs.active == None:
             if event.type == pygame.KEYUP:
@@ -1615,6 +1623,9 @@ class App:
                     self.audio.mute()
                 if event.key == pygame.K_F5:
                     self.reinit()
+                if event.key == pygame.K_b:
+                    self._saveFlag = not self._saveFlag
+                    print(f"Save Enabled: {self._saveFlag}")
         else:
             if event.type == pygame.KEYDOWN:
                 # Check for backspace 
@@ -1685,8 +1696,6 @@ class App:
                 self.stepMode = True
             self.windowCopy = None
             self.play = True
-        if key[pygame.K_b]:
-            self._saveFlag = not self._saveFlag 
 
     def drawGame(self):
         self.framesRemaining = 0
@@ -1953,7 +1962,7 @@ class App:
                                     f'Checkpoint: {self.players[topId].checkpoint} ' +\
                                     f'Highscore: {self.highScore} (Gen: {self.hsg}) ' +\
                                     f'Generations: {self.totalGenerations} ' +\
-                                    f'geneImpact: {self.geneImpact:0.4f} '+ \
+                                    f'geneImpact: {(self.geneImpact * max(0.0001, ((1 / self.totalGenerations) / 4))):0.4f} '+ \
                                     f'Leader: (X: {int(self.players[topId].agent.data["lastMoveReq"][0])} ' +\
                                     f'Y: {int(self.players[topId].agent.data["lastMoveReq"][1])} ' +\
                                     f'Thrust: {self.players[topId].agent.data["lastMoveReq"][2]}) ', +\
@@ -2062,11 +2071,12 @@ class App:
                 checkpoints.append(cp)
 
                 self.game.createItem('checkpoint', cp)
-
+            loadintUpdate = 0
             for i in range(len(self.players)):
                 if len(self.agents) < len(self.players):
                     self.agents.append(Agent(self, laps, checkpointCount, checkpoints))
                     # Remove this on Codingame....
+                    loadintUpdate = self.renderLoading(f"Generating Players", i/self.playerCount, loadintUpdate, (63, 122, 43))
                     self.players[i].agent = self.agents[i]
                     self.agents[i].player = self.players[i]
                     self.agents[i].genetics.id = self.players[i].id
@@ -2100,21 +2110,23 @@ class App:
         pygame.time.Clock().tick(tick)
 
     def on_cleanup(self):
+        self.players[0].genetics.saveStructure("on_exit")
         pygame.quit()
  
     def on_execute(self):
         if self.on_init() == False:
             self._running = False
 
+        lastUpdate = 0
         self.playing = False
         self.training = True
- 
+        
         while self._running:
             if self.trainingStage == 2:
                 self.maxTests = 10
-            if self.trainingStage == 1:
+            elif self.trainingStage == 1:
                 self.maxTests = 15
-            if self.trainingStage == 0:
+            elif self.trainingStage == 0:
                 self.maxTests = 20
 
             while self._running and (self.training or self.playing):
@@ -2180,9 +2192,13 @@ class App:
                             if player.highScore > self.highScore:
                                 self.highScore = player.highScore
                                 self.hsg = self.totalGenerations
+                            loadintUpdate = self.renderLoading(f"Saving new best...", 0, 0, (63, 122, 43))
                             player.agent.genetics.saveStructure(None, player.highScore)
+                            loadintUpdate = self.renderLoading(f"Saving new best...", 1, 0, (63, 122, 43))
                     if idx < self.winners:
                         counts["winners"] += 1
+                        loadintUpdate = self.renderLoading(f"Spawing Decendents", counts["winners"]/self.winners, loadintUpdate, (63, 122, 43))
+
                         for pidx in range(idx + 1, self.winners):
                             if idx != pidx:
                                 # print(f'Breeding {idx=} with {pidx=}')
@@ -2193,6 +2209,8 @@ class App:
                         # print(f'{idx - self.winners=}')
                         # print(f'{len(offspring)-1=}')
                         # print((idx - self.winners) % (len(offspring)))
+                        loadintUpdate = self.renderLoading(f"Mutating Decendents", (idx-self.winners)/(self.playerCount-self.winners), loadintUpdate, (63, 122, 43))
+
                         player.agent.genetics.genes = offspring[(idx - self.winners) % (len(offspring ))][(idx % 2) + 1]['genes']
                         if idx >= (len(offspring) * 2) + self.winners:
                             if idx >= (len(offspring) * 4) + self.winners:
@@ -2225,6 +2243,42 @@ class App:
 
 
         self.on_cleanup()
+
+    def renderLoading(self, label, percentage, lastUpdate, color=(128, 172, 245)):
+        self.now = time.time()
+        if self.now  >= lastUpdate + ((60 / (self.fps) / 60) / 4):
+            for event in pygame.event.get():
+                self.onLodatingEvent(event)
+            font = pygame.font.SysFont("impact", 24, bold=False, italic=False)
+            self._display_surf.fill((0, 0, 0, 0))
+
+            text = font.render(f'{label}', True, color)
+            textSize = font.size(f'{label}')
+            center = (self.window.width / 2, self.window.height / 2)
+            self._display_surf.blit(text, (center[0] - (textSize[0] / 2), center[1] - (textSize[1] * 2)))
+
+            if percentage:
+                pygame.draw.rect(self._display_surf, color, (int(center[0] * 0.2), center[1] + (textSize[1]), int(center[0] * 1.6), 40), width=1, border_radius=5)
+                pygame.draw.rect(self._display_surf, (int(color[0]/2), int(color[1]/2), int(color[2]/2)), (int(center[0] * 0.2) + 1, center[1] + int(textSize[1]) + 1, int((center[0] * 1.6) * percentage) - 2, 38), border_radius=5)
+
+            pygame.display.flip()
+            time.sleep(0.0025)
+
+            return self.now
+        return lastUpdate
+    
+    def onLodatingEvent(self, event):
+        if event.type == pygame.QUIT:
+            self.sigKill()
+        if event.type == pygame.WINDOWDISPLAYCHANGED:
+            self.screenId = int(event.display_index)
+        if event.type == pygame.VIDEORESIZE:
+            self._display_surf = pygame.display.set_mode((event.w, event.h), self.surfaceOptions, 32, 0, True)
+            self.window.updateSize(event.w, event.h)
+            self.updateField()
+            self.indexTargets()
+            self.inputs.defineInputs()
+            pygame.display.set_caption(self.caption)
 
     def playerDebug(self):
         self._display_surf.fill((0, 0, 0))
@@ -2307,8 +2361,8 @@ class Neural():
         output = None
         self.results = []
         
-        for l in self.structure:
-            if l == len(self.structure)-1:
+        for i, l in enumerate(self.structure):
+            if i == len(self.structure)-1:
                 z = self.process(l, output)
                 self.results.append(z)
                 result = z.tolist().pop()
@@ -2376,12 +2430,15 @@ class Agent(Root):
         self.data['previous'] = {}
         self.lastThrust = 0
         self.hasBoost = True
+        self.mass = 1
+        self.usedShield = False
+        self.usedShieldTurns = 0
 
         # Replace this with trained neural structure
-        self.genetics = Genetic(self.app, 17, 15, 3, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
+        self.genetics = Genetic(self.app, 31, 22, 4, 3, self.app.save, None, copy.deepcopy(self.app.agents[0].genetics.structure) if bool(len(self.app.agents)) else None)
         self.brain = Neural(copy.deepcopy(self.genetics.structure))
         self.genes = str(self.genetics.genes)
-        self.output = [0, 0]
+        self.output = [0, 0, 0]
 
     def reinit(self, laps, checkpointCount, checkpoints):
         self.data['previous'] = {}
@@ -2390,7 +2447,10 @@ class Agent(Root):
         self.data["checkpoints"] = checkpoints
         self.lastThrust = 0
         self.data["laps"] = laps
-        self.output = [0, 0]
+        self.output = [0, 0, 0]
+        self.mass = 1
+        self.usedShield = False
+        self.usedShieldTurns = 0
 
         
     def roundData(self, x, y, vx, vy, angle, ncid, pods):
@@ -2411,7 +2471,10 @@ class Agent(Root):
             der = deriv(self.data['previous']['location'], self.data['location'])
         else: 
             der = deriv(self.data['location'], self.data['location'])
+        
 
+        # print(f'{self.data['location'] if "location" not in self.data['previous'] else self.data['previous']['location']}, {self.data['location']}')
+        # print(der)
         speed =  math.sqrt(abs(der['dx'] ** 2) + abs(der['dy'] ** 2))
 
         self.update(math.atan2(dert['dy'], dert['dx']) * (180 / math.pi), "targetAngle")
@@ -2467,17 +2530,39 @@ class Agent(Root):
                 angleDiffrence(self.app.targets[fcid].path, self.app.targets[ffcid].path) / 180, \
                 int(self.hasBoost),
                 self.output[0],
-                self.output[1]]
+                self.output[1],
+                self.output[2],
+                1 - (self.usedShieldTurns / 3)]
+        
+        extraCount = 0
+        for p in self.app.players:
+            if p.id != self.player.id:
+                extraCount += 1
+                data.append(p.agent.data["angle"] / 360)
+                data.append(p.agent.data["vector"]["d"] / 360)
+                data.append(p.agent.data["vector"]["m"] / 5000)
+                data.append(1 - (distance(self.data["location"], p.agent.data["location"]) / self.app.maxD))
+            if extraCount == 3:
+                break
         output = self.brain.forward(data)
         self.output = output
 
-        thrust = abs(math.ceil(output[1] * 100)) if not output[2] > 0.98 else "BOOST"
+        thrust = abs(math.ceil(output[1] * 100)) if not output[2] > 0.9 else "BOOST" if output[2] > 0.1 else "SHIELD"
         if thrust == "BOOST":
             if self.hasBoost == True:
                 self.hasBoost = False
                 thrust = 200
             else:
                 thrust = 100
+        if thrust == "SHIELD" or self.usedShield:
+            thrust = 0
+            self.usedShield = True
+            self.usedShieldTurns += 1
+            self.mass = 10
+            if self.usedShieldTurns > 3:
+                self.usedShieldTurns = 0
+                self.usedShield = False
+                self.mass = 1
         direction = self.direction(output[0])
 
         turnAmount = 0
